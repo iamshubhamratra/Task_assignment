@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Signup - Task Manager</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <div class="auth-container">
+    <div class="auth-box">
+      <h2>Task Manager</h2>
+      <p class="auth-subtitle">Create a new account</p>
+
+      <div id="message" class="message hidden"></div>
+
+      <form id="signupForm">
+        <div class="form-group">
+          <label for="name">Full Name</label>
+          <input type="text" id="name" placeholder="Enter your name" required />
+        </div>
+
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" placeholder="Enter your email" required />
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <input type="password" id="password" placeholder="Min 8 chars, uppercase, number, special char" required />
+          <small class="hint">e.g. Password@123</small>
+        </div>
+
+        <button type="submit" class="btn btn-primary" id="submitBtn">Sign Up</button>
+      </form>
+
+      <p class="auth-link">Already have an account? <a href="login.html">Login</a></p>
+    </div>
+  </div>
+
+  <script>
+    const BASE_URL = "http://localhost:8080";
+
+    document.getElementById("signupForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const name = document.getElementById("name").value;
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      const btn = document.getElementById("submitBtn");
+
+      btn.textContent = "Creating account...";
+      btn.disabled = true;
+
+      try {
+        const res = await fetch(`${BASE_URL}/Assignment/auth/signup`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ name, email, password })
+        });
+
+        const data = await res.json();
+
+        if (data.status === "success") {
+          showMessage(data.message + " Redirecting to login...", "success");
+          setTimeout(() => {
+            window.location.href = "login.html";
+          }, 2000);
+        } else {
+          showMessage(data.message, "error");
+        }
+      } catch (err) {
+        showMessage("Failed to connect to server", "error");
+      } finally {
+        btn.textContent = "Sign Up";
+        btn.disabled = false;
+      }
+    });
+
+    function showMessage(text, type) {
+      const msg = document.getElementById("message");
+      msg.textContent = text;
+      msg.className = `message ${type}`;
+    }
+  </script>
+
+</body>
+</html>

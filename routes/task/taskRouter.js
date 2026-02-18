@@ -12,7 +12,7 @@ const deleteTaskController = require("../../controller/taskController/deleteTask
 taskRouter.post("/createTask", createTaskValidator, createTaskController);
 
 // get all tasks
-taskRouter.get("/allTask", getAllTaskController);
+taskRouter.get("/", getAllTaskController);
 
 // get single task
 taskRouter.get("/:id", getSingleTaskController);

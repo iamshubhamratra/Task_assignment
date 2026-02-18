@@ -212,7 +212,7 @@ json
 
 ### 5. Get All Tasks
 
-**Endpoint:** `GET /Assignment/task/allTask`
+**Endpoint:** `GET /Assignment/task/`
 
 **Headers:**
 ```

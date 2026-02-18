@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dashboard - Task Manager</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="navbar">
+    <h1>Task Manager</h1>
+    <div class="nav-right">
+      <span id="welcomeUser"></span>
+      <button id="logoutBtn" class="btn-logout">Logout</button>
+    </div>
+  </nav>
+
+  <div class="dashboard">
+
+    <!-- Message -->
+    <div id="message" class="message hidden"></div>
+
+    <!-- Create / Edit Task Form -->
+    <div class="card">
+      <h3 id="formTitle">Create New Task</h3>
+      <form id="taskForm">
+        <div class="form-group">
+          <label for="title">Title *</label>
+          <input type="text" id="title" placeholder="Enter task title" required />
+        </div>
+        <div class="form-group">
+          <label for="description">Description</label>
+          <input type="text" id="description" placeholder="Enter task description (optional)" />
+        </div>
+        <div class="form-row">
+          <button type="submit" class="btn btn-success" id="submitBtn">Create Task</button>
+          <button type="button" class="btn btn-secondary hidden" id="cancelBtn">Cancel</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Task List -->
+    <div class="card">
+      <div class="task-list-header">
+        <h3>My Tasks</h3>
+        <span id="taskCount" class="task-count"></span>
+      </div>
+
+      <div id="taskList">
+        <div class="loading">Loading tasks...</div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    const BASE_URL = "http://localhost:8080";
+    let editingTaskId = null;
+
+    // ─── On Load ──────────────────────────────────────
+    window.onload = async () => {
+      await checkAuth();
+      await fetchTasks();
+    };
+
+    // ─── Check Auth ───────────────────────────────────
+    async function checkAuth() {
+      try {
+        const res = await fetch(`${BASE_URL}/Assignment/task/allTask`, {
+          credentials: "include"
+        });
+        if (res.status === 401) {
+          window.location.href = "login.html";
+        }
+      } catch (e) {
+        window.location.href = "login.html";
+      }
+    }
+
+    // ─── Logout ───────────────────────────────────────
+    document.getElementById("logoutBtn").addEventListener("click", async () => {
+      try {
+        await fetch(`${BASE_URL}/Assignment/auth/logout`, {
+          credentials: "include"
+        });
+      } catch (e) {}
+      window.location.href = "login.html";
+    });
+
+    // ─── Fetch All Tasks ──────────────────────────────
+    async function fetchTasks() {
+      try {
+        const res = await fetch(`${BASE_URL}/Assignment/task/allTask`, {
+          credentials: "include"
+        });
+        const data = await res.json();
+
+        console.log("API Response:", data);
+
+        if (data.status === "success") {
+          const tasks = data.data.tasks;
+          console.log("Tasks received:", tasks);
+          renderTasks(tasks);
+          document.getElementById("taskCount").textContent = `${tasks.length} task(s)`;
+        } else {
+          showMessage(data.message, "error");
+        }
+      } catch (err) {
+        console.error("Fetch error:", err);
+        showMessage("Failed to fetch tasks", "error");
+      }
+    }
+
+    // ─── Render Tasks ─────────────────────────────────
+    function renderTasks(tasks) {
+      const list = document.getElementById("taskList");
+
+      if (tasks.length === 0) {
+        list.innerHTML = `
+          <div class="empty-state">
+            <p>No tasks yet. Create your first task above!</p>
+          </div>`;
+        return;
+      }
+
+      list.innerHTML = tasks.map(task => {
+        // Check if user field is populated (admin view)
+        const hasUser = task.user && typeof task.user === 'object' && task.user.name;
+        
+        console.log(`Task "${task.title}" - User:`, task.user, "HasUser:", hasUser);
+        
+        return `
+          <div class="task-card ${task.completed ? "completed" : ""}" id="task-${task._id}">
+            <div class="task-info">
+              <h4 class="${task.completed ? "strikethrough" : ""}">${escapeHtml(task.title)}</h4>
+              ${task.description ? `<p>${escapeHtml(task.description)}</p>` : ""}
+              <div class="task-badges">
+                <span class="badge ${task.completed ? "badge-success" : "badge-pending"}">
+                  ${task.completed ? "Completed" : "Pending"}
+                </span>
+                ${hasUser ? `<span class="badge badge-user">👤 ${escapeHtml(task.user.name)}</span>` : ''}
+                ${hasUser && task.user.email ? `<span class="badge badge-email">📧 ${escapeHtml(task.user.email)}</span>` : ''}
+              </div>
+            </div>
+            <div class="task-actions">
+              <button class="btn-icon btn-complete" onclick="toggleComplete('${task._id}', ${task.completed})" 
+                title="${task.completed ? "Mark Pending" : "Mark Complete"}">
+                ${task.completed ? "↶" : "✓"}
+              </button>
+              <button class="btn-icon btn-edit" onclick="startEdit('${task._id}', \`${escapeHtml(task.title)}\`, \`${escapeHtml(task.description || '')}\`)" 
+                title="Edit">
+                ✏️
+              </button>
+              <button class="btn-icon btn-delete" onclick="deleteTask('${task._id}')" title="Delete">
+                🗑️
+              </button>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    // ─── Create / Update Task ─────────────────────────
+    document.getElementById("taskForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      const title = document.getElementById("title").value;
+      const description = document.getElementById("description").value;
+      const btn = document.getElementById("submitBtn");
+
+      btn.disabled = true;
+      btn.textContent = "Saving...";
+
+      try {
+        if (editingTaskId) {
+          // UPDATE
+          const res = await fetch(`${BASE_URL}/Assignment/task/${editingTaskId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ title, description })
+          });
+          const data = await res.json();
+
+          if (data.status === "success") {
+            showMessage("Task updated successfully!", "success");
+            resetForm();
+            await fetchTasks();
+          } else {
+            showMessage(data.message, "error");
+          }
+        } else {
+          // CREATE
+          const res = await fetch(`${BASE_URL}/Assignment/task/createTask`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ title, description })
+          });
+          const data = await res.json();
+
+          if (data.status === "success") {
+            showMessage("Task created successfully!", "success");
+            resetForm();
+            await fetchTasks();
+          } else {
+            showMessage(data.message, "error");
+          }
+        }
+      } catch (err) {
+        console.error("Submit error:", err);
+        showMessage("Something went wrong", "error");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = editingTaskId ? "Update Task" : "Create Task";
+      }
+    });
+
+    // ─── Toggle Complete ──────────────────────────────
+    async function toggleComplete(id, currentStatus) {
+      try {
+        const res = await fetch(`${BASE_URL}/Assignment/task/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ completed: !currentStatus })
+        });
+        const data = await res.json();
+
+        if (data.status === "success") {
+          showMessage(`Task marked as ${!currentStatus ? "completed" : "pending"}!`, "success");
+          await fetchTasks();
+        } else {
+          showMessage(data.message, "error");
+        }
+      } catch (err) {
+        console.error("Toggle error:", err);
+        showMessage("Failed to update task", "error");
+      }
+    }
+
+    // ─── Delete Task ──────────────────────────────────
+    async function deleteTask(id) {
+      if (!confirm("Are you sure you want to delete this task?")) return;
+
+      try {
+        const res = await fetch(`${BASE_URL}/Assignment/task/${id}`, {
+          method: "DELETE",
+          credentials: "include"
+        });
+        const data = await res.json();
+
+        if (data.status === "success") {
+          showMessage("Task deleted successfully!", "success");
+          await fetchTasks();
+        } else {
+          showMessage(data.message, "error");
+        }
+      } catch (err) {
+        console.error("Delete error:", err);
+        showMessage("Failed to delete task", "error");
+      }
+    }
+
+    // ─── Start Edit ───────────────────────────────────
+    function startEdit(id, title, description) {
+      editingTaskId = id;
+      document.getElementById("title").value = title;
+      document.getElementById("description").value = description;
+      document.getElementById("formTitle").textContent = "Edit Task";
+      document.getElementById("submitBtn").textContent = "Update Task";
+      document.getElementById("cancelBtn").classList.remove("hidden");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    // ─── Cancel Edit ──────────────────────────────────
+    document.getElementById("cancelBtn").addEventListener("click", resetForm);
+
+    function resetForm() {
+      editingTaskId = null;
+      document.getElementById("taskForm").reset();
+      document.getElementById("formTitle").textContent = "Create New Task";
+      document.getElementById("submitBtn").textContent = "Create Task";
+      document.getElementById("cancelBtn").classList.add("hidden");
+    }
+
+    // ─── Show Message ─────────────────────────────────
+    function showMessage(text, type) {
+      const msg = document.getElementById("message");
+      msg.textContent = text;
+      msg.className = `message ${type}`;
+      setTimeout(() => {
+        msg.className = "message hidden";
+      }, 3000);
+    }
+
+    // ─── Escape HTML ──────────────────────────────────
+    function escapeHtml(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
+
+</body>
+</html>
